@@ -3286,6 +3286,146 @@ TEST(ConditionTest, TestTTC)
     EvaluateRelativeSpeed(trig_obj, obj, t, 7.0 * M_PI_4);
 }
 
+// Verify Object::TimeToCollision returns the same TTC values as the existing
+// TrigByTimeToCollision condition across the same 8 heading rotations the
+// condition test exercises. Since TrigByTimeToCollision::CheckCondition now
+// delegates to Object::TimeToCollision, agreement is required for any
+// regression to surface.
+static void EvaluateTimeToCollisionAPI(Object& trig_obj, Object& obj, double heading)
+{
+    // object in front of triggering object
+    double obj_pos[2]      = {0.0, 0.0};
+    double trig_obj_pos[2] = {0.0, 0.0};
+    RotateVec2D(0.0, 0.0, heading, trig_obj_pos[0], trig_obj_pos[1]);
+    trig_obj.pos_.SetInertiaPos(trig_obj_pos[0], trig_obj_pos[1], heading, false);
+    RotateVec2D(100.0, 0.0, heading, obj_pos[0], obj_pos[1]);
+    obj.pos_.SetInertiaPos(obj_pos[0], obj_pos[1], heading, false);
+
+    double ttc = -999.0;
+
+    // Approach: trig 10 m/s, obj stationary -> TTC = 100/10 = 10s
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(0.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(trig_obj.TimeToCollision(&obj,
+                                       roadmanager::CoordinateSystem::CS_ENTITY,
+                                       roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL,
+                                       false,
+                                       ttc),
+              0);
+    EXPECT_NEAR(ttc, 10.0, 1e-3);
+
+    // Closing fast: trig 50 m/s, obj 10 m/s -> rel speed 40 m/s -> TTC = 2.5s
+    trig_obj.SetSpeed(50.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(10.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(trig_obj.TimeToCollision(&obj,
+                                       roadmanager::CoordinateSystem::CS_ENTITY,
+                                       roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL,
+                                       false,
+                                       ttc),
+              0);
+    EXPECT_NEAR(ttc, 2.5, 1e-3);
+
+    // Diverging: trig 10 m/s, obj 20 m/s ahead -> TTC undefined (-1)
+    trig_obj.SetSpeed(10.0);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(20.0);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(trig_obj.TimeToCollision(&obj,
+                                       roadmanager::CoordinateSystem::CS_ENTITY,
+                                       roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL,
+                                       false,
+                                       ttc),
+              0);
+    EXPECT_NEAR(ttc, -1.0, 1e-3);
+}
+
+TEST(ConditionTest, TestTimeToCollisionAPI)
+{
+    Object trig_obj(Object::Type::VEHICLE);
+    Object obj(Object::Type::VEHICLE);
+
+    trig_obj.SetActive(true);
+    obj.SetActive(true);
+
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 0.0 * M_PI_4);
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 1.0 * M_PI_4);
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 2.0 * M_PI_4);
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 3.0 * M_PI_4);
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 4.0 * M_PI_4);
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 5.0 * M_PI_4);
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 6.0 * M_PI_4);
+    EvaluateTimeToCollisionAPI(trig_obj, obj, 7.0 * M_PI_4);
+
+    // Null target -> error, ttc reset to -1
+    double ttc = 42.0;
+    EXPECT_EQ(trig_obj.TimeToCollision(nullptr,
+                                       roadmanager::CoordinateSystem::CS_ENTITY,
+                                       roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL,
+                                       false,
+                                       ttc),
+              -1);
+    EXPECT_NEAR(ttc, -1.0, 1e-3);
+}
+
+// Verify that TrigByTimeToCollision::CheckCondition (which delegates to
+// Object::TimeToCollision internally) produces the same ttc_ value as a direct
+// call to Object::TimeToCollision on the same entities. This guards against
+// regressions where the condition path and the public API path diverge.
+TEST(ConditionTest, TestTimeToCollisionAPIMatchesCondition)
+{
+    Object trig_obj(Object::Type::VEHICLE);
+    Object obj(Object::Type::VEHICLE);
+
+    TrigByTimeToCollision t;
+    t.object_                 = &obj;
+    t.triggering_entity_rule_ = TrigByTimeToCollision::TriggeringEntitiesRule::ANY;
+    t.triggering_entities_.entity_.push_back({&trig_obj});
+    t.value_       = 3.0;
+    t.freespace_   = false;
+    t.cs_          = roadmanager::CoordinateSystem::CS_ENTITY;
+    t.relDistType_ = roadmanager::RelativeDistanceType::REL_DIST_LONGITUDINAL;
+    t.rule_        = Rule::LESS_OR_EQUAL;
+
+    trig_obj.SetActive(true);
+    obj.SetActive(true);
+
+    // Geometry: trig at origin, obj 100m ahead, both heading 0.
+    trig_obj.pos_.SetInertiaPos(0.0, 0.0, 0.0, false);
+    obj.pos_.SetInertiaPos(100.0, 0.0, 0.0, false);
+
+    struct Case
+    {
+        double trig_speed;
+        double obj_speed;
+    };
+    const Case cases[] = {
+        {10.0, 0.0},    // approach -> 10s
+        {50.0, 10.0},   // closing  -> 2.5s
+        {10.0, 20.0},   // diverging -> -1
+        {0.0, 0.0},     // stationary -> -1
+        {-10.0, 0.0},   // reverse -> -1
+    };
+
+    for (const auto& c : cases)
+    {
+        trig_obj.SetSpeed(c.trig_speed);
+        trig_obj.SetVel(c.trig_speed, 0.0, 0.0);
+        obj.SetSpeed(c.obj_speed);
+        obj.SetVel(c.obj_speed, 0.0, 0.0);
+
+        // Drive the condition (writes t.ttc_) and the public API (writes ttc_api)
+        // on identical state and compare.
+        t.CheckCondition(0.0);
+        double ttc_api = 0.0;
+        EXPECT_EQ(trig_obj.TimeToCollision(&obj, t.cs_, t.relDistType_, t.freespace_, ttc_api), 0);
+        EXPECT_NEAR(t.ttc_, ttc_api, 1e-9) << "trig_speed=" << c.trig_speed << " obj_speed=" << c.obj_speed;
+    }
+}
+
 static void TTCAndLateralDistParamDeclCallback(void*)
 {
     static int counter = 0;
