@@ -188,6 +188,15 @@ namespace esmini
         bool                             is_quit() const;
         void                             reset();
 
+        // Compute time to collision from object_a to object_b. Returns -1.0 if
+        // undefined (target behind, moving apart, zero rel speed) or on error.
+        // Coordinate system defaults to ENTITY-local, distance type to LONGITUDINAL,
+        // matching OpenSCENARIO TimeToCollisionCondition defaults.
+        //
+        // cs:        0=UNDEFINED, 1=ENTITY (default), 2=LANE, 3=ROAD, 4=TRAJECTORY, 5=WORLD
+        // dist_type: 0=UNDEFINED, 1=LATERAL, 2=LONGITUDINAL (default), 3=CARTESIAN, 4=EUCLIDIAN
+        double get_ttc(int object_a_id, int object_b_id, bool free_space = true, int cs = 1, int dist_type = 2) const;
+
         OpenScenario(const OpenScenario&)            = delete;
         OpenScenario& operator=(const OpenScenario&) = delete;
 
