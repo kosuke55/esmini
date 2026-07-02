@@ -188,6 +188,11 @@ namespace esmini
         bool                             is_quit() const;
         void                             reset();
 
+        // cs / dist_type map to roadmanager::CoordinateSystem and
+        // roadmanager::RelativeDistanceType. Defaults match OpenSCENARIO
+        // TimeToCollisionCondition (CS_ENTITY, REL_DIST_LONGITUDINAL).
+        double get_ttc(int object_a_id, int object_b_id, bool free_space = true, int cs = 1, int dist_type = 2) const;
+
         OpenScenario(const OpenScenario&)            = delete;
         OpenScenario& operator=(const OpenScenario&) = delete;
 
