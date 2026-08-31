@@ -1384,10 +1384,19 @@ int Object::TimeToCollision(Object*                           target,
         closing_speed = (rel_vel_x * los_x + rel_vel_y * los_y) / los_length;
     }
 
+    // Minimum closing speed [m/s] for TTC to be considered defined. SMALL_NUMBER (1E-6) is a
+    // floating point epsilon, not a physical threshold: entities holding a practically constant
+    // gap still produce a closing speed of a few cm/s from numerical noise, which yields a
+    // meaningless TTC of hours. The noise stems from the two velocity representations in use --
+    // pos_ velocity is a finite difference (dx/dt) of the position, i.e. a chord direction, while
+    // heading * speed is the tangent -- which differ by a fraction of a degree on curved roads and
+    // can flip the sign of a near zero closing speed.
+    const double MIN_CLOSING_SPEED = 0.1;
+
     // TTC not defined for cases:
     //  - no distance between entities
-    //  - entities not approaching each other
-    if (fabs(rel_dist) < SMALL_NUMBER || closing_speed < SMALL_NUMBER)
+    //  - entities not approaching each other (or closing too slowly to be meaningful)
+    if (fabs(rel_dist) < SMALL_NUMBER || closing_speed < MIN_CLOSING_SPEED)
     {
         ttc = -1;
     }

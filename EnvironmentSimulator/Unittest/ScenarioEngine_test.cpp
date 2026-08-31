@@ -3344,6 +3344,63 @@ TEST(ConditionTest, TestTTCCrossingPaths)
     EvaluateCrossingPair(trig_obj, obj, t, 7.0 * M_PI_4);
 }
 
+// Entities holding a practically constant gap must not produce a TTC. A closing speed of a few
+// cm/s is numerical noise (see MIN_CLOSING_SPEED in Object::TimeToCollision) and would otherwise
+// yield a meaningless TTC of hours. Observed on a curved road at 270 m separation, where the
+// finite difference velocity and heading * speed disagree by a fraction of a degree.
+static void EvaluateNearConstantGapPair(Object& trig_obj, Object& obj, TrigByTimeToCollision& t, double heading)
+{
+    double obj_pos[2]      = {0.0, 0.0};
+    double trig_obj_pos[2] = {0.0, 0.0};
+
+    // both objects driving the same direction, 270 m apart, closing at only 0.03 m/s
+    RotateVec2D(0.0, 0.0, heading, trig_obj_pos[0], trig_obj_pos[1]);
+    trig_obj.pos_.SetInertiaPos(trig_obj_pos[0], trig_obj_pos[1], heading, false);
+    RotateVec2D(270.0, 0.0, heading, obj_pos[0], obj_pos[1]);
+    obj.pos_.SetInertiaPos(obj_pos[0], obj_pos[1], heading, false);
+
+    trig_obj.SetSpeed(13.92);
+    trig_obj.SetVel(trig_obj.GetSpeed() * cos(trig_obj.pos_.GetH()), trig_obj.GetSpeed() * sin(trig_obj.pos_.GetH()), 0.0);
+    obj.SetSpeed(13.89);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, -1.0, 1e-3);
+
+    // a genuine approach just above the threshold is still reported
+    obj.SetSpeed(13.42);
+    obj.SetVel(obj.GetSpeed() * cos(obj.pos_.GetH()), obj.GetSpeed() * sin(obj.pos_.GetH()), 0.0);
+    EXPECT_EQ(t.CheckCondition(0.0), false);
+    EXPECT_NEAR(t.ttc_, 540.0, 1.0);
+}
+
+TEST(ConditionTest, TestTTCNearConstantGap)
+{
+    Object trig_obj(Object::Type::VEHICLE);
+    Object obj(Object::Type::VEHICLE);
+
+    TrigByTimeToCollision t;
+    t.object_                 = &obj;
+    t.triggering_entity_rule_ = TrigByTimeToCollision::TriggeringEntitiesRule::ANY;
+    t.triggering_entities_.entity_.push_back({&trig_obj});
+    t.value_       = 3.0;
+    t.freespace_   = false;
+    t.cs_          = roadmanager::CoordinateSystem::CS_ENTITY;
+    t.relDistType_ = roadmanager::RelativeDistanceType::REL_DIST_EUCLIDIAN;
+    t.rule_        = Rule::LESS_OR_EQUAL;
+
+    trig_obj.SetActive(true);
+    obj.SetActive(true);
+
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 0.0 * M_PI_4);
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 1.0 * M_PI_4);
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 2.0 * M_PI_4);
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 3.0 * M_PI_4);
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 4.0 * M_PI_4);
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 5.0 * M_PI_4);
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 6.0 * M_PI_4);
+    EvaluateNearConstantGapPair(trig_obj, obj, t, 7.0 * M_PI_4);
+}
+
 static void TTCAndLateralDistParamDeclCallback(void*)
 {
     static int counter = 0;
